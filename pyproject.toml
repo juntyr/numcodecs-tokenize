@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "numcodecs-tokenize"
-version = "0.1.0"
+version = "0.1.1"
 description = "Tokenization codec for the `numcodecs` buffer compression API"
 readme = "README.md"
 license = "MPL-2.0"

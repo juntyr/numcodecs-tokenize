@@ -5,7 +5,6 @@
 __all__ = ["TokenizeCodec"]
 
 from io import BytesIO
-from sys import byteorder
 
 import numcodecs.compat
 import numcodecs.registry
@@ -83,6 +82,8 @@ class TokenizeCodec(Codec):
         else:
             utype = a.dtype
 
+        assert (dtype.itemsize % utype.itemsize) == 0
+
         # insert padding to align with itemsize
         message.append(
             b"\0" * (utype.itemsize - (sum(len(m) for m in message) % utype.itemsize))
@@ -90,25 +91,19 @@ class TokenizeCodec(Codec):
 
         # ensure that the table keys are encoded in little endian binary
         table_keys_array = unique[argsort]
-        table_keys_byteorder = table_keys_array.dtype.byteorder
-        table_keys_byteorder = (
-            table_keys_byteorder
-            if table_keys_byteorder in ("<", ">")
-            else ("<" if (byteorder == "little") else ">")
+        message.append(
+            table_keys_array.astype(table_keys_array.dtype.newbyteorder("<")).tobytes()
         )
-        if table_keys_byteorder != "<":
-            table_keys_array = table_keys_array.byteswap()
-        message.append(table_keys_array.tobytes())
 
         indices = argsortinv[inverse].astype(utype)
-        if table_keys_byteorder != "<":
-            indices = indices.byteswap()
-        message.append(indices.tobytes())
+        message.append(indices.astype(indices.dtype.newbyteorder("<")).tobytes())
 
         encoded_bytes = b"".join(message)
 
         encoded: np.ndarray[tuple[int], np.dtype[np.unsignedinteger]] = np.frombuffer(
-            encoded_bytes, dtype=utype, count=len(encoded_bytes) // utype.itemsize
+            encoded_bytes,
+            dtype=utype.newbyteorder("<"),
+            count=len(encoded_bytes) // utype.itemsize,
         )
 
         return encoded  # type: ignore
@@ -168,24 +163,16 @@ class TokenizeCodec(Codec):
             dtype=_dtype_bits(dtype).newbyteorder("<"),
             count=table_len,
         )
-        dtype_bits_byteorder = _dtype_bits(dtype).byteorder
-        dtype_bits_byteorder = (
-            dtype_bits_byteorder
-            if dtype_bits_byteorder in ("<", ">")
-            else ("<" if (byteorder == "little") else ">")
-        )
-        if dtype_bits_byteorder != "<":
-            table_keys = table_keys.byteswap()
 
         indices = np.frombuffer(
             b_io.read(),
             dtype=utype.newbyteorder("<"),
             count=np.prod(shape, dtype=np.uintp),
         )
-        if dtype_bits_byteorder != "<":
-            indices = indices.byteswap()
 
-        decoded = table_keys[indices].view(dtype).reshape(shape)
+        decoded = (
+            table_keys[indices].astype(_dtype_bits(dtype)).view(dtype).reshape(shape)
+        )
 
         return numcodecs.compat.ndarray_copy(decoded, out)  # type: ignore
 
